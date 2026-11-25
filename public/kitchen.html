@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Display System (KDS)</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        .card { background: #1e293b; border-radius: 8px; padding: 16px; border: 1px solid #334155; display: flex; flex-direction: column; justify-content: space-between; }
+        .card-header { display: flex; justify-content: space-between; border-bottom: 1px solid #475569; padding-bottom: 8px; }
+        .badge { background: #3b82f6; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; }
+        .items-list { list-style: none; padding: 0; margin: 12px 0; }
+        .items-list li { margin-bottom: 6px; font-size: 15px; }
+        .footer-info { font-size: 13px; color: #94a3b8; margin-bottom: 12px; }
+        .btn-ready { background: #16a34a; color: white; border: none; padding: 8px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; }
+        .btn-ready:hover { background: #15803d; }
+        .status-ready { opacity: 0.5; border-color: #16a34a; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 style="margin: 0;">Kitchen Display System (KDS)</h1>
+        <div id="live-indicator" style="color: #4ade80;">● Live Connection</div>
+    </header>
+
+    <div class="grid" id="orders-container"></div>
+
+    <script>
+        const socket = io();
+        let orders = [];
+
+        function renderOrders() {
+            const container = document.getElementById('orders-container');
+            container.innerHTML = orders.map(order => `
+                <div class="card ${order.status === 'Ready' ? 'status-ready' : ''}">
+                    <div>
+                        <div class="card-header">
+                            <span class="badge">Table ${order.table}</span>
+                            <span style="font-size: 12px; color: #cbd5e1;">${order.createdAt}</span>
+                        </div>
+                        <h4 style="margin: 8px 0 4px 0;">Order: ${order.id}</h4>
+                        <ul class="items-list">
+                            ${order.items.map(item => `<li><strong>${item.qty}x</strong> ${item.name}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="footer-info">
+                            <div>Total: ₹${order.total}</div>
+                            <div>Payment: <strong>${order.paymentMethod}</strong> (${order.paymentStatus})</div>
+                            <div>Status: <strong>${order.status}</strong></div>
+                        </div>
+                        ${order.status !== 'Ready' ? `
+                            <button class="btn-ready" onclick="markReady('${order.id}')">Mark as Ready</button>
+                        ` : '<div style="color:#4ade80; text-align:center;">Order Ready</div>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function markReady(orderId) {
+            socket.emit('update-order-status', { orderId: orderId, status: 'Ready' });
+        }
+
+        socket.on('initial-orders', (data) => {
+            orders = data;
+            renderOrders();
+        });
+
+        socket.on('order-received', (newOrder) => {
+            orders.unshift(newOrder);
+            renderOrders();
+        });
+
+        socket.on('order-status-changed', ({ orderId, status }) => {
+            const order = orders.find(o => o.id === orderId);
+            if (order) {
+                order.status = status;
+                renderOrders();
+            }
+        });
+    </script>
+</body>
+</html>

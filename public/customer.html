@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contactless Dining Menu</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 16px; background: #f8fafc; color: #1e293b; }
+        .header { background: #0f172a; color: white; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+        
+        /* Category Tabs */
+        .category-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 16px; }
+        .tab-btn { background: white; color: #334155; border: 1px solid #cbd5e1; padding: 10px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+        .tab-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+        /* Section Dividers */
+        .diet-header { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 8px 0; display: flex; align-items: center; gap: 6px; }
+        .veg-dot { width: 10px; height: 10px; border: 1.5px solid #16a34a; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; }
+        .veg-dot::after { content: ''; width: 5px; height: 5px; background: #16a34a; border-radius: 50%; }
+        .nonveg-dot { width: 10px; height: 10px; border: 1.5px solid #dc2626; display: inline-flex; align-items: center; justify-content: center; border-radius: 2px; }
+        .nonveg-dot::after { content: ''; width: 5px; height: 5px; background: #dc2626; border-radius: 50%; }
+
+        /* Menu Cards */
+        .menu-item { background: white; border-radius: 8px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .item-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .btn-qty { padding: 6px 12px; margin: 0 4px; background: #e2e8f0; color: #0f172a; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; }
+        
+        /* Cart & Checkout */
+        .cart-section { background: white; padding: 16px; border-radius: 12px; margin-top: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        select { width: 100%; padding: 10px; margin: 10px 0; border-radius: 6px; border: 1px solid #cbd5e1; }
+        .checkout-btn { width: 100%; padding: 12px; background: #16a34a; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .hidden { display: none; }
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: #fef3c7; color: #92400e; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2 style="margin: 0;">Table <span id="table-number">1</span> Menu</h2>
+        <p style="margin: 4px 0 0 0; opacity: 0.8;">Choose a category to browse dishes</p>
+    </div>
+
+    <!-- Category Navigation -->
+    <div class="category-tabs" id="category-tabs"></div>
+
+    <!-- Dynamic Menu List -->
+    <div id="menu-list"></div>
+
+    <div class="cart-section">
+        <h3>Your Order</h3>
+        <ul id="cart-items" style="padding-left: 20px;"></ul>
+        <p><strong>Total: ₹<span id="cart-total">0</span></strong></p>
+
+        <label for="payment-method"><strong>Payment Option:</strong></label>
+        <select id="payment-method">
+            <option value="Cash at Counter">Cash (Pay at Counter)</option>
+            <option value="Online / UPI">Online (UPI / Card)</option>
+        </select>
+
+        <button id="order-btn" class="checkout-btn" onclick="submitOrder()">Place Order</button>
+        
+        <div id="order-status-box" class="hidden">
+            <div class="status-badge" id="order-status-text">Status: Order Sent to Kitchen</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const urlParams = new URLSearchParams(window.location.search);
+        const tableId = urlParams.get('table') || '1';
+        document.getElementById('table-number').textContent = tableId;
+
+        const categories = [
+            "Starters",
+            "Refreshments, Juices & Alcohols",
+            "Main Cuisine",
+            "Breads"
+        ];
+
+        const menuItems = [
+            // Starters
+            { id: 101, name: "Paneer Tikka", price: 220, category: "Starters", type: "veg" },
+            { id: 102, name: "Crispy Baby Corn", price: 180, category: "Starters", type: "veg" },
+            { id: 103, name: "Veg Manchurian Dry", price: 170, category: "Starters", type: "veg" },
+            { id: 104, name: "Chicken Tandoori (Half)", price: 280, category: "Starters", type: "non-veg" },
+            { id: 105, name: "Chilli Chicken", price: 250, category: "Starters", type: "non-veg" },
+            { id: 106, name: "Fish Fingers", price: 290, category: "Starters", type: "non-veg" },
+
+            // Refreshments, Juices & Alcohols
+            { id: 201, name: "Fresh Lime Soda", price: 70, category: "Refreshments, Juices & Alcohols", type: "veg" },
+            { id: 202, name: "Watermelon Fresh Juice", price: 90, category: "Refreshments, Juices & Alcohols", type: "veg" },
+            { id: 203, name: "Virgin Mojito", price: 120, category: "Refreshments, Juices & Alcohols", type: "veg" },
+            { id: 204, name: "Cold Coffee with Ice Cream", price: 130, category: "Refreshments, Juices & Alcohols", type: "veg" },
+            { id: 205, name: "Draught Beer (Pint)", price: 210, category: "Refreshments, Juices & Alcohols", type: "veg" },
+            { id: 206, name: "Classic Whiskey Peg (60ml)", price: 260, category: "Refreshments, Juices & Alcohols", type: "veg" },
+
+            // Main Cuisine
+            { id: 301, name: "Paneer Butter Masala", price: 260, category: "Main Cuisine", type: "veg" },
+            { id: 302, name: "Dal Tadka", price: 180, category: "Main Cuisine", type: "veg" },
+            { id: 303, name: "Veg Dum Biryani", price: 230, category: "Main Cuisine", type: "veg" },
+            { id: 304, name: "Butter Chicken", price: 320, category: "Main Cuisine", type: "non-veg" },
+            { id: 305, name: "Mutton Rogan Josh", price: 380, category: "Main Cuisine", type: "non-veg" },
+            { id: 306, name: "Hyderabadi Chicken Biryani", price: 290, category: "Main Cuisine", type: "non-veg" },
+
+            // Breads
+            { id: 401, name: "Tandoori Roti", price: 35, category: "Breads", type: "veg" },
+            { id: 402, name: "Butter Naan", price: 55, category: "Breads", type: "veg" },
+            { id: 403, name: "Garlic Cheese Naan", price: 85, category: "Breads", type: "veg" },
+            { id: 404, name: "Lachha Paratha", price: 60, category: "Breads", type: "veg" },
+            { id: 405, name: "Chicken Keema Naan", price: 120, category: "Breads", type: "non-veg" }
+        ];
+
+        let activeCategory = categories[0];
+        let cart = {};
+
+        function renderTabs() {
+            const tabsEl = document.getElementById('category-tabs');
+            tabsEl.innerHTML = categories.map(cat => `
+                <button class="tab-btn
